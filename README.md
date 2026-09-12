@@ -50,6 +50,10 @@ streamlit run app.py
 
 跑起来后浏览器会自动打开 http://localhost:8501。左边可以换成自己上传的 CSV，也可以改模型名和接口地址。
 
+Windows 上也可以直接双击 `run.bat`，等价于上面这条命令。
+
+如果启动后马上退出，最后一行是 `OpenBLAS error: Memory allocation still failed after 10 retries`，那是 OpenBLAS 按 CPU 线程数预分配内存失败导致的，在启动前设 `set OPENBLAS_NUM_THREADS=1` 就好（`run.bat` 里已经设了）。
+
 模型 id 和代码里不一致时，用环境变量覆盖：
 
 ```
@@ -60,6 +64,7 @@ set SHOPMIND_MODEL=qwen2.5-3b-instruct
 
 ```
 app.py                     网页界面
+run.bat                    Windows 一键启动界面
 main.py                    命令行入口
 data/orders_raw.csv        订单数据（模拟生成）
 output/                    图表输出
