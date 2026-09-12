@@ -45,7 +45,7 @@ def plot_monthly_trend(monthly: pd.DataFrame) -> Path:
 
     plt.title("月度订单量与成交额趋势")
     fig.tight_layout()
-    return _save(fig, "01_月度趋势.png")
+    return _save(fig, "monthly_trend.png")
 
 
 def plot_category_aftersales(cat: pd.DataFrame) -> Path:
@@ -65,7 +65,7 @@ def plot_category_aftersales(cat: pd.DataFrame) -> Path:
             ax.text(bar.get_x() + bar.get_width() / 2, h, f"{h:.1f}", ha="center", va="bottom", fontsize=9)
     plt.title("各品类售后率对比")
     fig.tight_layout()
-    return _save(fig, "02_品类售后率.png")
+    return _save(fig, "category_aftersales.png")
 
 
 def plot_channel(channel: pd.DataFrame) -> Path:
@@ -84,7 +84,7 @@ def plot_channel(channel: pd.DataFrame) -> Path:
         axes[1].text(i, v, f"{v:.1f}", ha="center", va="bottom")
 
     fig.tight_layout()
-    return _save(fig, "03_渠道效率.png")
+    return _save(fig, "channel_efficiency.png")
 
 
 def render_all(df: pd.DataFrame) -> list[Path]:

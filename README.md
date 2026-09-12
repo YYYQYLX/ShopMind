@@ -12,6 +12,14 @@ ShopMind 做两件事：
 1. **把数据算清楚**：清洗、分维度聚合、出图，产出可读的经营指标
 2. **把数字讲成话**：把算好的指标交给本地大模型，生成一份店主能直接看懂的诊断报告
 
+## 效果展示
+
+| 月度订单量与成交额趋势 | 各品类售后率对比 |
+|---|---|
+| ![月度趋势](output/monthly_trend.png) | ![品类售后](output/category_aftersales.png) |
+
+![渠道效率](output/channel_efficiency.png)
+
 ## 技术架构
 
 ```
