@@ -23,8 +23,10 @@ import requests
 PROVIDERS = {
     "local": {
         "base_url": "http://localhost:1234/v1",  # LM Studio / Bionic 默认的本地服务地址
-        # 必须和 LM Studio / Bionic 里实际加载的模型 id 完全一致
-        "model": "qwen2.5-7b-instruct",
+        # 必须和 LM Studio / Bionic 里实际加载的模型 id 完全一致。
+        # 默认用 3B：8G 显存跑 3B 很轻松，7B 会因为 KV cache 分配失败而加载不了。
+        # 显存够大时换成 7B 效果更好，改这里或用环境变量都行。
+        "model": "qwen2.5-3b-instruct",
         "api_key": "lm-studio",  # 本地服务不校验，随便填一个非空值
     },
     "cloud": {
