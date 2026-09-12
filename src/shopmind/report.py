@@ -96,6 +96,32 @@ def _fmt_channels(df: pd.DataFrame) -> str:
     return "### 各渠道对比（每行一个渠道）\n" + "\n".join(lines) + "\n"
 
 
+def _fmt_rankings(results: dict) -> str:
+    """把各品类、各渠道的指标从高到低排好。
+
+    追问环节什么问题都可能冒出来（"哪个品类客单价最高"），这类排序题模型
+    也是答不对的——实测问它客单价最高的品类，它答了食品，实际是家居。
+    与其每次叮嘱它去比较，不如把排名排好：它只要读第一行就行。
+    """
+    lines = []
+
+    cat = results["品类售后"]
+    for col, unit in (("客单价", "元"), ("退货率", "%"), ("换货率", "%"), ("订单量", "单")):
+        ranked = cat.sort_values(col, ascending=False)
+        lines.append(
+            f"品类{col}从高到低：" + " > ".join(f"{r['品类']} {r[col]}{unit}" for _, r in ranked.iterrows())
+        )
+
+    ch = results["渠道效率"]
+    for col, unit in (("订单量", "单"), ("客单价", "元"), ("退货率", "%"), ("换货率", "%")):
+        ranked = ch.sort_values(col, ascending=False)
+        lines.append(
+            f"渠道{col}从高到低：" + " > ".join(f"{r['订单来源']} {r[col]}{unit}" for _, r in ranked.iterrows())
+        )
+
+    return "### 各项指标的排名（已排好，直接按顺序读）\n" + "\n".join(lines) + "\n"
+
+
 def _fmt_conclusions(results: dict) -> str:
     """把三个问题的结论拼成一段，紧挨着提问放。
 
@@ -108,6 +134,18 @@ def _fmt_conclusions(results: dict) -> str:
     ch = results.get("渠道事实") or {}
 
     out = ["### 下面几句是已经算好的结论，直接引用，数字一个字都不要改"]
+
+    s = results.get("整体概览") or {}
+    if s:
+        # 这行的数字在上面也出现过，这里再写一遍是有意的：简报有 2000 多字，
+        # 模型对开头那段基本视而不见，问它"一共多少用户"会回答"数据里没有"。
+        # 把规模数字挪到靠近提问的位置，它就能找到了。
+        out.append(
+            f"规模：订单总数{s['订单总数']}单，独立用户数{s['独立用户数']}人，"
+            f"成交总额{s['成交总额']}元，客单价{s['客单价']}元，"
+            f"购买件数{s['购买件数']}，评价率{s['评价率']}%，"
+            f"整体退货率{s['退货率']}%，整体换货率{s['换货率']}%。"
+        )
 
     if m:
         out.append(
@@ -130,12 +168,15 @@ def _fmt_conclusions(results: dict) -> str:
     return "\n".join(out) + "\n"
 
 
-def build_data_brief(results: dict) -> str:
+def build_data_brief(results: dict, with_questions: bool = True) -> str:
     """把分析结果拼成给模型的"数据简报"。
 
     两个原则：
     1. 只保留回答那三个问题所需的数据，不做全量倾倒（省 token，也少干扰）
     2. 把"已算好的结论性事实"单独列一段——模型只负责表达，不负责算术
+
+    with_questions=False 用于追问场景：那时候简报末尾不该再挂着"请回答这三个问题"，
+    否则模型会以为自己的任务是写报告。
     """
     parts = ["以下是我店铺的经营数据，请据此分析：\n"]
 
@@ -143,8 +184,10 @@ def build_data_brief(results: dict) -> str:
     parts.append(
         "### 整体概览\n"
         f"订单总数：{s['订单总数']}\n"
+        f"独立用户数：{s['独立用户数']}\n"
         f"成交总额：{s['成交总额']} 元\n"
         f"客单价：{s['客单价']} 元\n"
+        f"购买件数：{s['购买件数']}\n"
         f"换货率：{s['换货率']}%\n"
         f"退货率：{s['退货率']}%\n"
         f"评价率：{s['评价率']}%\n"
@@ -153,16 +196,44 @@ def build_data_brief(results: dict) -> str:
     parts.append(_fmt_months(results["月度趋势"]))
     parts.append(_fmt_categories(results["品类售后"]))
     parts.append(_fmt_channels(results["渠道效率"]))
+    parts.append(_fmt_rankings(results))
     parts.append(_fmt_conclusions(results))
 
-    parts.append(
-        "\n请特别回答这三个问题：\n"
-        "1. 全年的销售趋势是怎样的？请依据上面给出的客观事实判断，"
-        "并引用最高月和最低月的数据。\n"
-        "2. 哪个品类的售后问题最严重？店主应该从哪个方向去排查？\n"
-        "3. 直播下单和店铺下单，哪个渠道的效率更高？依据是什么？"
-    )
+    if with_questions:
+        parts.append(
+            "\n请特别回答这三个问题：\n"
+            "1. 全年的销售趋势是怎样的？请依据上面给出的客观事实判断，"
+            "并引用最高月和最低月的数据。\n"
+            "2. 哪个品类的售后问题最严重？店主应该从哪个方向去排查？\n"
+            "3. 直播下单和店铺下单，哪个渠道的效率更高？依据是什么？"
+        )
     return "\n".join(parts)
+
+
+QA_PROMPT = """你是一位电商店铺的经营分析顾问。店主会针对手上的数据问一个问题，你只回答这个问题。
+
+1. 只使用我提供的数据，不要编造数字。
+2. 直接回答问题本身。不要写报告，不要用【】标题，不要分成好几段。
+3. 结论后面附上依据的数字。
+4. 回答前先把整份简报看完，需要的数字通常就在里面，别急着说没有。
+   确实找不到的，回答"简报里没有这项数据"，不要猜。
+5. 用简体中文，纯文本输出，最多三句话。"""
+
+
+def answer_question(results: dict, question: str, config: LLMConfig | None = None) -> str:
+    """针对数据回答一个具体问题。
+
+    这里刻意没有复用报告那套 SYSTEM_PROMPT：那个提示词把输出锁成了四段式报告，
+    拿它回答"哪个品类客单价最高"，模型会硬写一篇报告出来。
+    """
+    messages = [
+        {"role": "system", "content": QA_PROMPT},
+        {
+            "role": "user",
+            "content": f"{build_data_brief(results, with_questions=False)}\n\n问题：{question}",
+        },
+    ]
+    return chat(messages, config)
 
 
 def generate_report(df: pd.DataFrame, config: LLMConfig | None = None) -> str:

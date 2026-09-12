@@ -18,7 +18,7 @@ from shopmind.analyzer import collect_all  # noqa: E402
 from shopmind.charts import render_all  # noqa: E402
 from shopmind.data_loader import load_clean  # noqa: E402
 from shopmind.llm import PROVIDERS, LLMConfig, chat  # noqa: E402
-from shopmind.report import SYSTEM_PROMPT, build_data_brief  # noqa: E402
+from shopmind.report import SYSTEM_PROMPT, answer_question, build_data_brief  # noqa: E402
 
 st.set_page_config(page_title="ShopMind 经营分析", layout="wide")
 
@@ -152,13 +152,11 @@ if st.button("提问"):
         st.warning("先写一个问题")
     else:
         with st.spinner("模型正在回答"):
-            answer = ask(
-                [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": f"{brief}\n\n请只回答这个问题：{question}"},
-                ],
-                cfg,
-            )
+            try:
+                answer = answer_question(results, question, cfg)
+            except Exception as e:  # noqa: BLE001 - 界面层兜住异常，别让页面崩
+                st.error(f"调用模型失败：{e}")
+                answer = ""
         if answer:
             st.session_state["answer"] = (question, answer)
 
