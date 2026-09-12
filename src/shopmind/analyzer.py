@@ -137,15 +137,103 @@ def monthly_facts(df: pd.DataFrame) -> dict:
     first, last = counts[0], counts[-1]
     change = (last - first) / first * 100 if first else 0
 
+    # 逐月升降明细，直接写成"哪几个月升、哪几个月降"。
+    # 只给汇总数字（上升 4 个、下降 7 个）不够——模型想说具体月份时还是会凭印象编，
+    # 这就是首版说出"1-4 月增长显著"的原因（实际 2 月是跌的）。
+    ups, downs = [], []
+    for m, prev, cur in zip(months[1:], counts, counts[1:]):
+        if cur > prev:
+            ups.append(f"{m}月")
+        elif cur < prev:
+            downs.append(f"{m}月")
+
     return {
         "订单量最高月份": f"{months[peak_i]}月（{counts[peak_i]}单）",
         "订单量最低月份": f"{months[low_i]}月（{counts[low_i]}单）",
         "全年平均订单量": round(sum(counts) / len(counts), 1),
+        "环比上升的月份": "、".join(ups) if ups else "无",
+        "环比下降的月份": "、".join(downs) if downs else "无",
         "环比上升月份数": up,
         "环比下降月份数": down,
         "最长连续同向变动": f"{longest_run} 个月",
         "首月对比末月变化": f"{change:+.2f}%",
         "是否呈单调上升": "否" if down > 0 else "是",
+        "趋势结论": (
+            "各月有升有降，整体是波动，不存在持续上升或持续下降"
+            if up and down
+            else "全年基本单调上升" if up else "全年基本单调下降"
+        ),
+    }
+
+
+def category_facts(df: pd.DataFrame) -> dict:
+    """品类售后的客观事实。
+
+    同样是为了替模型做判断：让它从四行表格里挑出"退货率最高的品类"，
+    它会挑错——实测中它把换货率最高的也说成了退货率最高的那个品类。
+    与其反复叮嘱，不如直接把结论算好。
+    """
+    t = category_aftersales(df)
+    if t.empty:
+        return {}
+
+    worst_return = t.loc[t["退货率"].idxmax()]
+    worst_exchange = t.loc[t["换货率"].idxmax()]
+    best_return = t.loc[t["退货率"].idxmin()]
+
+    return {
+        "退货率最高的品类": (
+            f"{worst_return['品类']}（退货率 {worst_return['退货率']}%，"
+            f"换货率 {worst_return['换货率']}%，{int(worst_return['订单量'])} 单）"
+        ),
+        "换货率最高的品类": (
+            f"{worst_exchange['品类']}（换货率 {worst_exchange['换货率']}%，"
+            f"退货率 {worst_exchange['退货率']}%，{int(worst_exchange['订单量'])} 单）"
+        ),
+        "退货率最低的品类": f"{best_return['品类']}（{best_return['退货率']}%）",
+        "注意": "退货率最高和换货率最高的不是同一个品类，回答时不要合并成一个。",
+    }
+
+
+def channel_facts(df: pd.DataFrame) -> dict:
+    """渠道对比的客观事实。
+
+    这里要防的是另一种误判：把"订单量更大"直接说成"效率更高"。
+    订单量只说明人从哪来，效率要看客单价、件数和售后率。
+    """
+    t = channel_efficiency(df).set_index("订单来源")
+    if not {"直播下单", "店铺下单"}.issubset(t.index):
+        return {}
+
+    live, shop = t.loc["直播下单"], t.loc["店铺下单"]
+
+    def _compare(col: str, unit: str, lower_is_better: bool = False) -> str:
+        """对比同一指标在两个渠道上的表现。
+
+        相对差小于 1% 时统一说"基本持平"——否则 150.48 和 150.24 这种
+        0.16% 的差距会被标成"直播更优"，模型很可能会把它当成一条结论写进报告。
+        """
+        a, b = float(live[col]), float(shop[col])
+        base = max(abs(a), abs(b))
+        if base and abs(a - b) / base < 0.01:
+            return f"{col}：直播 {a}{unit}、店铺 {b}{unit}，基本持平"
+        winner = "直播" if ((a < b) if lower_is_better else (a > b)) else "店铺"
+        return f"{col}：直播 {a}{unit}、店铺 {b}{unit}，差 {round(abs(a - b), 2)}{unit}，{winner}更优"
+
+    price_gap_pct = abs(float(live["客单价"]) - float(shop["客单价"])) / float(shop["客单价"]) * 100
+
+    return {
+        "订单量": f"直播 {int(live['订单量'])} 单，店铺 {int(shop['订单量'])} 单",
+        "客单价": _compare("客单价", " 元"),
+        "平均件数": _compare("平均件数", " 件"),
+        "退货率": _compare("退货率", "%", lower_is_better=True),
+        "换货率": _compare("换货率", "%", lower_is_better=True),
+        "客单价差异幅度": f"{round(price_gap_pct, 2)}%",
+        "渠道结论": (
+            f"两渠道客单价差异仅 {round(price_gap_pct, 2)}%，平均件数几乎相同，"
+            f"差别主要在退货率（直播 {live['退货率']}% 低于店铺 {shop['退货率']}%）。"
+            "订单量上直播更多，但那属于销量差异，不等于单位用户质量更高。"
+        ),
     }
 
 
@@ -156,7 +244,9 @@ def collect_all(df: pd.DataFrame) -> dict:
         "月度趋势": monthly_trend(df),
         "月度事实": monthly_facts(df),
         "品类售后": category_aftersales(df),
+        "品类事实": category_facts(df),
         "渠道效率": channel_efficiency(df),
+        "渠道事实": channel_facts(df),
         "会员对比": membership_comparison(df),
     }
 
